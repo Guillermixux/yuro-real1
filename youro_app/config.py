@@ -10,7 +10,7 @@ RUTA_APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARCHIVO_DB = os.path.join(RUTA_APP, "yuro.db")
 CARPETA_BACKUPS = os.path.join(RUTA_APP, "backups")
 CARPETA_ARCHIVOS = os.path.join(RUTA_APP, "archivos")  # para el tablón
-PUERTO = int(os.environ.get("PORT") or os.environ.get("YURO_PUERTO") or "8080")
+PUERTO = int(os.environ.get("YURO_PUERTO", "8080"))
 
 # ---------------- Modelo económico (anti-inflación, tipo Bitcoin) ----------
 DIFICULTAD = 3             # ceros iniciales en el hash
