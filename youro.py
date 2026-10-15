@@ -45,14 +45,18 @@ def main():
     except Exception:
         pass
 
-    # En Render: borrar base de datos al arrancar (empieza limpia)
+    # En Render: borrar TODA la base de datos al arrancar
     if os.environ.get("PORT"):
-        for suf in ("", "-shm", "-wal"):
-            ruta = config.ARCHIVO_DB + suf
-            if os.path.exists(ruta):
-                os.remove(ruta)
-                print(f"  [RESET] Borrado: {ruta}")
-        print("  [RESET] Base de datos limpia en Render")
+        import glob
+        print(f"  [RESET] Buscando bases de datos en: {config.RUTA_APP}")
+        for patron in ["*.db", "*.db-shm", "*.db-wal", "**/*.db"]:
+            for ruta in glob.glob(os.path.join(config.RUTA_APP, patron), recursive=True):
+                try:
+                    os.remove(ruta)
+                    print(f"  [RESET] Borrado: {ruta}")
+                except Exception as e:
+                    print(f"  [RESET] Error borrando {ruta}: {e}")
+        print("  [RESET] Listo - base de datos limpia")
 
     online = "--online" in sys.argv
     red = "--red" in sys.argv
