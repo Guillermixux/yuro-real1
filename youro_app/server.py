@@ -332,7 +332,7 @@ def crear_handler(mundo: Mundo):
                 )
 
             if ruta == "/ranking":
-                filas = mundo.cadena.ranking()
+                filas = [dict(f) for f in mundo.cadena.ranking()]
                 self._resolver_nombres_ranking(filas)
                 return self._responder(views.pagina_ranking(usuario, filas, self._stats()))
 

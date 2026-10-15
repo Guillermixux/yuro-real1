@@ -3,7 +3,7 @@ import time
 import urllib.request
 import urllib.error
 
-URL = "https://yuro-py.onrender.com"
+URL = "https://yuro-real1.onrender.com"
 INTERVALO = 840  # 14 minutos (Render se duerme a los 15)
 
 def ping():
