@@ -245,6 +245,11 @@ def crear_handler(mundo: Mundo):
             consulta = {k: v[0] for k, v in parse_qs(url.query).items()}
             usuario = self._usuario()
 
+            # Rutas públicas (solo login/registro sin sesión)
+            rutas_publicas = {"/login", "/registro", "/manifest.json", "/sw.js", "/icono.png"}
+            if not usuario and ruta not in rutas_publicas:
+                return self._redirigir("/login")
+
             if ruta == "/":
                 if not usuario:
                     return self._redirigir("/login")
