@@ -554,7 +554,7 @@ if ('serviceWorker' in navigator) {{
 <body>
 <div class="cont">
   <header class="top">
-    <a class="logo" href="/"><span class="moneda">Y</span>Yuro</a>
+    <a class="logo" href="/"><img src="/icono.png" alt="Y" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px">Yuro</a>
     <nav>{links}</nav>
   </header>
   {barra}
@@ -576,7 +576,7 @@ def pagina_login(error=None, ok=None):
         msg = f'<div class="msg ok">{esc(ok)}</div>'
     contenido = f"""
     <div class="hero">
-      <div class="logo-big">🪙</div>
+      <img src="/icono.png" alt="Yuro" style="width:80px;height:80px;border-radius:50%;margin-bottom:10px">
       <h1>Tu moneda, tus amigos</h1>
       <p class="sub">Blockchain privada para tu grupo: regístrate, mina yuros y paga a tus amigos.
       Todos los saldos son públicos y transparentes.</p>
@@ -600,7 +600,7 @@ def pagina_registro(error=None):
     msg = f'<div class="msg mal">{esc(error)}</div>' if error else ""
     contenido = f"""
     <div class="hero">
-      <div class="logo-big">🪙</div>
+      <img src="/icono.png" alt="Yuro" style="width:80px;height:80px;border-radius:50%;margin-bottom:10px">
       <h1>Crea tu cuenta Yuro</h1>
       <p class="sub">Al registrarte recibes <b class="oro">Y {formatear(config.BIENVENIDA)}</b> de bienvenida.
       Después mina bloques y envíales yuros a tus amigos.</p>
