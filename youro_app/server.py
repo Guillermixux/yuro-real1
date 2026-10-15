@@ -299,7 +299,7 @@ def crear_handler(mundo: Mundo):
                         mundo.cadena.saldo(dir_u),
                         mundo.identidad.lista_nombres(),
                         mensaje=consulta.get("ok"),
-                        destino_previo=consulta.get("para", ""),
+                        destino_previo=consulta.get("destino", ""),
                         cantidad_previa=consulta.get("cantidad", ""),
                         concepto_previo=consulta.get("concepto", ""),
                         csrf=usuario["csrf"],

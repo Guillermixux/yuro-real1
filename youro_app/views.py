@@ -866,13 +866,13 @@ def pagina_ranking(usuario, filas, stats):
         nombre = f["nombre"] or corta_dir(f["direccion"], 14)
         propio = usuario and f["direccion"] == usuario["direccion"]
         accion = ("<span class=oro>(tú)</span>" if propio else
-                  (f"<a class='btn sec mini' href='/enviar?para={esc(nombre)}'>Enviar</a>"
+                  (f"<a class='btn sec mini' href='/enviar?destino={esc(f['direccion'])}'>Enviar</a>"
                    if usuario else ""))
         filas_html += (
             f"<tr{' style=background:rgba(245,158,11,.06)' if propio else ''}>"
             f"<td class='rank-pos'>{medallas[pos-1] if pos<=3 else pos}</td>"
             f"<td>{identicon_svg(f['direccion'], 28)} <a href='/u/{esc(nombre)}'><b>{esc(nombre)}</b></a></td>"
-            f"<td class='hash' style='max-width:120px'>{esc(corta_dir(f['direccion'], 20))}</td>"
+            f"<td class='hash' style='max-width:120px'>{esc(formatear_iban(f['direccion']))}</td>"
             f"<td class='oro' style='font-weight:800;text-align:right'>Y {formatear(f['saldo'])}</td>"
             f"<td style='text-align:right'>{accion}</td>"
             f"</tr>"
