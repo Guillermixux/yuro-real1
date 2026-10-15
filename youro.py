@@ -45,18 +45,21 @@ def main():
     except Exception:
         pass
 
-    # En Render: borrar TODA la base de datos al arrancar
-    if os.environ.get("PORT"):
-        import glob
-        print(f"  [RESET] Buscando bases de datos en: {config.RUTA_APP}")
-        for patron in ["*.db", "*.db-shm", "*.db-wal", "**/*.db"]:
-            for ruta in glob.glob(os.path.join(config.RUTA_APP, patron), recursive=True):
-                try:
-                    os.remove(ruta)
-                    print(f"  [RESET] Borrado: {ruta}")
-                except Exception as e:
-                    print(f"  [RESET] Error borrando {ruta}: {e}")
-        print("  [RESET] Listo - base de datos limpia")
+    # Borrar TODA la base de datos al arrancar
+    import glob
+    print("=" * 60)
+    print("  BORRANDO BASE DE DATOS...")
+    print(f"  Directorio: {config.RUTA_APP}")
+    for patron in ["*.db", "*.db-shm", "*.db-wal"]:
+        rutas = glob.glob(os.path.join(config.RUTA_APP, patron))
+        for ruta in rutas:
+            try:
+                os.remove(ruta)
+                print(f"  BORRADO: {ruta}")
+            except Exception as e:
+                print(f"  ERROR: {ruta} -> {e}")
+    print("  LISTO - base de datos limpia")
+    print("=" * 60)
 
     online = "--online" in sys.argv
     red = "--red" in sys.argv
