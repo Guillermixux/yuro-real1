@@ -4,6 +4,7 @@ import time
 
 from .auth import Identidad
 from .chain import Cadena
+from .economia import Economia
 from .config import BIENVENIDA, MAX_REGISTROS_POR_IP
 from .db import BaseDatos
 from . import config
@@ -17,6 +18,7 @@ class Mundo:
         self.db = BaseDatos(ruta_db)
         self.cadena = Cadena(self.db)
         self.identidad = Identidad(self.db)
+        self.economia = Economia(self.db)
         self.identidad.limpiar_sesiones()
         self.cadena.validar_cadena()
 
@@ -75,11 +77,19 @@ class Mundo:
             raise ValueError("La cuenta destino está congelada por el gobierno.")
         cantidad = round(float(cantidad), 2)
 
+        # Calcular quema (burn) - se destruye para crear escasez
+        quemar = round(cantidad * config.QUEMA_ENVIO_PCT / 100.0, 2)
+        if quemar < config.QUEMA_MINIMA:
+            quemar = config.QUEMA_MINIMA
+        if quemar >= cantidad:
+            raise ValueError("La cantidad es demasiado pequeña (la quema se la come).")
+        cantidad_neta = round(cantidad - quemar, 2)
+
         # Calcular impuesto si está activo
         impuesto_pct = self.impuesto_actual()
         if impuesto_pct > 0:
-            impuesto = round(cantidad * impuesto_pct / 100.0, 2)
-            neto = round(cantidad - impuesto, 2)
+            impuesto = round(cantidad_neta * impuesto_pct / 100.0, 2)
+            neto = round(cantidad_neta - impuesto, 2)
             if neto <= 0:
                 raise ValueError("El impuesto se come toda la cantidad. Reduce el importe.")
             # El emisor paga: neto al receptor + impuesto al GOBIERNO
@@ -88,6 +98,9 @@ class Mundo:
             if impuesto > 0:
                 self.cadena.enviar(emisor["direccion"], config.DIRECCION_GOBIERNO,
                                    impuesto, f"Impuesto ({impuesto_pct:.1f}%)")
+            # Quema: enviar a dirección quemada (0xQUEMA)
+            self.cadena.enviar(emisor["direccion"], "QUEMA",
+                               quemar, f"Quema ({config.QUEMA_ENVIO_PCT}%)")
             # Notificar al receptor
             notificar_usuario(
                 receptor["nombre"],
@@ -99,16 +112,19 @@ class Mundo:
             return neto, receptor["nombre"], impuesto
         else:
             self.cadena.enviar(emisor["direccion"], receptor["direccion"],
-                               cantidad, concepto)
+                               cantidad_neta, concepto)
+            # Quema
+            self.cadena.enviar(emisor["direccion"], "QUEMA",
+                               quemar, f"Quema ({config.QUEMA_ENVIO_PCT}%)")
             # Notificar al receptor
             notificar_usuario(
                 receptor["nombre"],
-                f"💰 +Y{cantidad:.2f} recibidos",
-                f"Has recibido Y{cantidad:.2f} de {emisor['nombre']}"
+                f"💰 +Y{cantidad_neta:.2f} recibidos",
+                f"Has recibido Y{cantidad_neta:.2f} de {emisor['nombre']}"
                 + (f"\nConcepto: {concepto}" if concepto else ""),
                 prioridad=4, tipo="dinero"
             )
-            return cantidad, receptor["nombre"], 0.0
+            return cantidad_neta, receptor["nombre"], 0.0
 
     def minar(self, nombre):
         usuario = self.identidad.buscar(nombre)
@@ -461,4 +477,132 @@ class Mundo:
                     os.remove(ruta_archivo)
             except Exception:
                 pass
+
+    # ==================== ECONOMÍA: BANCOS ====================
+    def crear_banco(self, nombre_banco, usuario):
+        """Crea un banco (cualquier usuario puede)."""
+        if not self.identidad.buscar(usuario):
+            raise ValueError("No autorizado.")
+        return self.economia.crear_banco(nombre_banco, usuario)
+
+    def listar_bancos(self):
+        return self.economia.listar_bancos()
+
+    def depositar_en_banco(self, nombre_banco, usuario, cantidad):
+        """Deposita yuros en un banco (primero envía al banco)."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        cantidad = round(float(cantidad), 2)
+        saldo = self.cadena.saldo(u["direccion"])
+        if saldo < cantidad:
+            raise ValueError(f"No tienes suficientes yuros. Saldo: Y{saldo:.2f}")
+        # Enviar al banco (dirección del dueño)
+        banco = self.economia.buscar_banco(nombre_banco)
+        self.cadena.enviar(u["direccion"], banco["dueno"], cantidad, f"Depósito en {banco['nombre']}")
+        # Registrar depósito
+        return self.economia.depositar(nombre_banco, usuario, cantidad)
+
+    def retirar_del_banco(self, nombre_banco, usuario, cantidad):
+        """Retira yuros de un banco."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        banco = self.economia.buscar_banco(nombre_banco)
+        cantidad = round(float(cantidad), 2)
+        # Verificar que el banco tiene saldo
+        dueno = self.identidad.buscar(banco["dueno"])
+        if dueno:
+            saldo_banco = self.cadena.saldo(dueno["direccion"])
+            if saldo_banco < cantidad:
+                raise ValueError("El banco no tiene suficiente liquidez.")
+            # Enviar del banco al usuario
+            self.cadena.enviar(dueno["direccion"], u["direccion"], cantidad, f"Retiro de {banco['nombre']}")
+        return self.economia.retirar(nombre_banco, usuario, cantidad)
+
+    def mis_depositos(self, usuario):
+        return self.economia.mis_depositos(usuario)
+
+    def solicitar_prestamo(self, nombre_banco, usuario, cantidad, garantia):
+        """Solicita préstamo (el banco aprueba automáticamente si hay fondos)."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        banco = self.economia.buscar_banco(nombre_banco)
+        resultado = self.economia.solicitar_prestamo(nombre_banco, usuario, cantidad, garantia)
+        # El banco envía el préstamo al usuario
+        dueno = self.identidad.buscar(banco["dueno"])
+        if dueno:
+            self.cadena.enviar(dueno["direccion"], u["direccion"], cantidad, f"Préstamo de {banco['nombre']}")
+        return resultado
+
+    def pagar_prestamo(self, prestamo_id, usuario, cantidad):
+        """Paga un préstamo."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        prestamo = self.db.consultarUno("SELECT * FROM prestamos WHERE id = ? AND usuario = ?", (prestamo_id, usuario))
+        if not prestamo:
+            raise ValueError("Préstamo no encontrado.")
+        banco = self.economia.buscar_banco(str(prestamo["banco_id"]))
+        dueno = self.identidad.buscar(banco["dueno"])
+        saldo = self.cadena.saldo(u["direccion"])
+        if saldo < cantidad:
+            raise ValueError(f"No tienes suficientes yuros. Saldo: Y{saldo:.2f}")
+        # Enviar al banco
+        if dueno:
+            self.cadena.enviar(u["direccion"], dueno["direccion"], cantidad, f"Pago préstamo #{prestamo_id}")
+        return self.economia.pagar_prestamo(prestamo_id, usuario, cantidad)
+
+    def mis_prestamos(self, usuario):
+        return self.economia.mis_prestamos(usuario)
+
+    # ==================== ECONOMÍA: BOLSA ====================
+    def comprar_accion(self, usuario, simbolo, cantidad):
+        """Compra acciones en la bolsa."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        resultado = self.economia.comprar_accion(usuario, simbolo, cantidad)
+        # Enviar dinero a la bolsa
+        self.cadena.enviar(u["direccion"], config.DIRECCION_BOLSA, resultado["total"], f"Compra {cantidad}x {simbolo}")
+        return resultado
+
+    def vender_accion(self, usuario, simbolo, cantidad):
+        """Vende acciones en la bolsa."""
+        u = self.identidad.buscar(usuario)
+        if not u:
+            raise ValueError("No autorizado.")
+        resultado = self.economia.vender_accion(usuario, simbolo, cantidad)
+        # La bolsa envía dinero al usuario
+        self.cadena.enviar(config.DIRECCION_BOLSA, u["direccion"], resultado["neto"], f"Venta {cantidad}x {simbolo}")
+        return resultado
+
+    def mi_cartera(self, usuario):
+        return self.economia.mi_cartera(usuario)
+
+    def historial_bolsa(self, usuario):
+        return self.economia.historial_bolsa(usuario)
+
+    def mercado_bolsa(self):
+        return self.economia.mercado_bolsa()
+
+    # ==================== ECONOMÍA: GOBIERNO ====================
+    def banco_central(self):
+        return self.economia.banco_central()
+
+    def ajustar_tasa_interes(self, usuario, nueva_tasa):
+        """Solo el gobierno ajusta la tasa de interés."""
+        if not self.es_admin(usuario):
+            raise ValueError("Solo el gobierno puede ajustar tasas.")
+        return self.economia.ajustar_tasa_interes(nueva_tasa)
+
+    def imprimir_dinero(self, usuario, cantidad, concepto="Impresión monetaria"):
+        """Solo el gobierno imprime dinero."""
+        if not self.es_admin(usuario):
+            raise ValueError("Solo el gobierno puede imprimir dinero.")
+        return self.economia.imprimir_dinero(cantidad, concepto)
+
+    def estadisticas_economia(self):
+        return self.economia.estadisticas_economia()
         return True
