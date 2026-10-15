@@ -1,4 +1,4 @@
-"""La cadena de bloques de YOURO: prueba de trabajo, halving y libro mayor público."""
+"""La cadena de bloques de Yuro: prueba de trabajo, halving y libro mayor público."""
 import hashlib
 import json
 import time
@@ -117,11 +117,11 @@ class Cadena:
         if cantidad <= 0:
             raise ValueError("La cantidad debe ser un número positivo.")
         if de == para:
-            raise ValueError("No puedes enviarte youros a ti mismo.")
+            raise ValueError("No puedes enviarte yuros a ti mismo.")
         concepto = (concepto or "").strip()[: config.LIMITE_CONCEPTO] or None
         with self.db.transaccion() as conn:
             if self._saldo_en(conn, de) < cantidad:
-                raise ValueError("No tienes suficientes youros.")
+                raise ValueError("No tienes suficientes yuros.")
             conn.execute(
                 "INSERT INTO transacciones(de, para, cantidad, concepto, tipo, timestamp) "
                 "VALUES(?, ?, ?, ?, 'transfer', ?)",
@@ -162,8 +162,17 @@ class Cadena:
 
     # ---------------------- minar ----------------------
     def recompensa_actual(self):
+        # Primero comprobar si el gobierno ha ajustado la recompensa
+        valor_gov = self.db.get_config("recompensa_mineria", "")
+        if valor_gov:
+            try:
+                base = float(valor_gov)
+            except ValueError:
+                base = config.RECOMPENSA
+        else:
+            base = config.RECOMPENSA
         hechos = self.contar_bloques() // config.HALVING_CADA
-        return round(config.RECOMPENSA / (2 ** hechos), 2)
+        return round(base / (2 ** hechos), 2)
 
     def proximo_halving(self):
         hechos = self.contar_bloques() // config.HALVING_CADA
@@ -189,7 +198,7 @@ class Cadena:
         """Crea, prueba de trabajo y encadena un bloque. Devuelve el dict del bloque."""
         recompensa = self.recompensa_actual()
         if recompensa <= 0:
-            raise ValueError("La emisión de youros nuevos ya ha terminado (tope alcanzado).")
+            raise ValueError("La emisión de yuros nuevos ya ha terminado (tope alcanzado).")
 
         with self.db.lock:
             ultimo = self.ultimo_bloque()

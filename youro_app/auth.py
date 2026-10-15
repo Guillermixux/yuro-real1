@@ -34,7 +34,7 @@ def verificar_password(password, almacenado):
 
 
 def direccion_aleatoria():
-    return "youro" + secrets.token_hex(20)
+    return "yuro" + secrets.token_hex(20)
 
 
 class Identidad:
@@ -127,6 +127,32 @@ class Identidad:
 
     def limpiar_sesiones(self):
         self.db.ejecutar("DELETE FROM sesiones WHERE expira <= ?", (time.time(),))
+
+    def cambiar_password(self, nombre, password_actual, password_nuevo):
+        """Cambia la contraseña de un usuario verificando la actual."""
+        usuario = self.buscar(nombre)
+        if not usuario:
+            raise ValueError("Usuario no encontrado.")
+        if not verificar_password(password_actual, usuario["password_hash"]):
+            raise ValueError("La contraseña actual es incorrecta.")
+        if len(password_nuevo) < config.MIN_CARACTERES_PASSWORD:
+            raise ValueError(
+                f"La contraseña nueva debe tener al menos "
+                f"{config.MIN_CARACTERES_PASSWORD} caracteres."
+            )
+        hash_nuevo, sal = hash_password(password_nuevo)
+        self.db.ejecutar(
+            "UPDATE usuarios SET password_hash=?, sal=? WHERE nombre=?",
+            (hash_nuevo, sal, nombre),
+        )
+        # Cerrar todas las sesiones excepto la actual (se reconecta después)
+        self.db.ejecutar("DELETE FROM sesiones WHERE nombre=?", (nombre,))
+        return True
+
+    def es_congelado(self, nombre):
+        """Comprueba si una cuenta está congelada."""
+        usuario = self.buscar(nombre)
+        return bool(usuario and usuario["congelado"])
 
     # ---------------------- límites en memoria ----------------------
     def _puede_login(self, ip):

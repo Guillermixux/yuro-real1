@@ -1,24 +1,33 @@
-"""Servidor web de YOURO: rutas, cookies, CSRF y páginas."""
+"""Servidor web de Yuro: rutas, cookies, CSRF y páginas."""
 import json
 import logging
+import os
 import secrets
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse, unquote
 
 from . import config, pwa, views
+from . import notify
 from .mundo import Mundo
 
 MAX_CUERPO = 64 * 1024  # 64 KB: suficiente para cualquier formulario
 
-log = logging.getLogger("youro")
+log = logging.getLogger("yuro")
+
+
+def fecha_corta(ts):
+    """Fecha corta para gráficas: HH:MM"""
+    t = time.localtime(ts)
+    return f"{t.tm_hour:02d}:{t.tm_min:02d}"
 
 
 def crear_handler(mundo: Mundo):
     """Crea la clase Handler ligada a una instancia de Mundo (para tests)."""
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "YOURO/" + config.VERSION
+        server_version = "Yuro/" + config.VERSION
 
         # ---------------- utilidades ----------------
         def log_message(self, *a):
@@ -33,7 +42,7 @@ def crear_handler(mundo: Mundo):
             return None
 
         def _usuario(self):
-            return mundo.usuario_de_token(self._cookie("youro_token"))
+            return mundo.usuario_de_token(self._cookie("yuro_token"))
 
         def _ip(self):
             xf = self.headers.get("X-Forwarded-For", "")
@@ -72,7 +81,7 @@ def crear_handler(mundo: Mundo):
             if limpiar_cookie:
                 self.send_header(
                     "Set-Cookie",
-                    "youro_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+                    "yuro_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
                 )
             self.end_headers()
 
@@ -80,7 +89,7 @@ def crear_handler(mundo: Mundo):
             max_edad = config.DURACION_SESION_DIAS * 86400
             self.send_header(
                 "Set-Cookie",
-                f"youro_token={token}; Path=/; Max-Age={max_edad}; HttpOnly; SameSite=Lax",
+                f"yuro_token={token}; Path=/; Max-Age={max_edad}; HttpOnly; SameSite=Lax",
             )
 
         def _mensaje(self, tipo, texto):
@@ -114,11 +123,96 @@ def crear_handler(mundo: Mundo):
             return secrets.compare_digest(token, esperado)
 
         def _leer_post(self):
+            content_type = self.headers.get("Content-Type", "")
             largo = int(self.headers.get("Content-Length") or 0)
+
+            # Multipart (con archivos)
+            if "multipart/form-data" in content_type:
+                if largo > 10 * 1024 * 1024:  # 10 MB máximo
+                    raise ValueError("Archivo demasiado grande.")
+                cuerpo = self.rfile.read(largo)
+                return self._parse_multipart(cuerpo, content_type)
+
+            # Formulario normal
             if largo > MAX_CUERPO:
                 raise ValueError("Formulario demasiado grande.")
             cuerpo = self.rfile.read(largo).decode("utf-8", errors="replace") if largo else ""
             return {k: v[0] for k, v in parse_qs(cuerpo, keep_blank_values=True).items()}
+
+        def _parse_multipart(self, cuerpo, content_type):
+            """Parsea multipart/form-data manualmente."""
+            import os
+            import re as re_mod
+
+            # Obtener boundary
+            match = re_mod.search(r'boundary=([^;]+)', content_type)
+            if not match:
+                return {}
+            boundary = match.group(1).strip('"')
+            boundary_bytes = boundary.encode()
+
+            campos = {}
+            archivos = {}
+
+            # Separar por boundary
+            partes = cuerpo.split(b"--" + boundary_bytes)
+            for parte in partes:
+                parte = parte.strip(b"\r\n")
+                if not parte or parte == b"--":
+                    continue
+
+                # Separar headers del contenido
+                if b"\r\n\r\n" not in parte:
+                    continue
+                headers_raw, contenido = parte.split(b"\r\n\r\n", 1)
+                headers_str = headers_raw.decode("utf-8", errors="replace")
+
+                # Obtener nombre del campo
+                name_match = re_mod.search(r'name="([^"]+)"', headers_str)
+                if not name_match:
+                    continue
+                nombre_campo = name_match.group(1)
+
+                # ¿Es archivo?
+                filename_match = re_mod.search(r'filename="([^"]*)"', headers_str)
+                if filename_match:
+                    nombre_archivo = filename_match.group(1)
+                    if nombre_archivo:  # solo si hay archivo seleccionado
+                        # Obtener Content-Type del archivo
+                        ct_match = re_mod.search(r'Content-Type:\s*([^\r\n]+)', headers_str)
+                        tipo_archivo = ct_match.group(1).strip() if ct_match else ""
+                        archivos[nombre_campo] = (nombre_archivo, contenido, tipo_archivo)
+                else:
+                    # Campo de texto
+                    try:
+                        campos[nombre_campo] = contenido.decode("utf-8")
+                    except Exception:
+                        campos[nombre_campo] = ""
+
+            # Guardar archivos en disco
+            import secrets as secrets_mod
+            for campo, (nombre_original, datos, tipo) in archivos.items():
+                # Validar extensión
+                ext = nombre_original.rsplit(".", 1)[-1].lower() if "." in nombre_original else ""
+                if ext not in config.TABLON_TIPOS_OK:
+                    raise ValueError(f"Tipo de archivo no permitido: .{ext}")
+                # Validar tamaño
+                if len(datos) > config.TABLON_ARCHIVO_MAX:
+                    raise ValueError("El archivo supera los 5MB.")
+
+                # Nombre único
+                nombre_unico = f"{secrets_mod.token_hex(8)}.{ext}"
+                os.makedirs(config.CARPETA_ARCHIVOS, exist_ok=True)
+                ruta_guardar = os.path.join(config.CARPETA_ARCHIVOS, nombre_unico)
+                with open(ruta_guardar, "wb") as f:
+                    f.write(datos)
+
+                # Devolver nombre del archivo guardado
+                campos[campo] = nombre_unico
+                campos[f"{campo}_tipo"] = ext
+                campos[f"{campo}_original"] = nombre_original
+
+            return campos
 
         def _nombre(self, usuario):
             return usuario["nombre"] if usuario else None
@@ -143,16 +237,27 @@ def crear_handler(mundo: Mundo):
                 dir_u = usuario["direccion"]
                 movs = mundo.cadena.transacciones_de(dir_u, limite=10)
                 movs = self._enriquecer_movs(movs, dir_u)
+                anuncios = mundo.anuncios_activos()
+
+                # Preparar datos para gráficas
+                saldo_actual = mundo.cadena.saldo(dir_u)
+                datos_grafica = self._datos_grafica_saldo(dir_u, movs, saldo_actual)
+                actividad = self._datos_actividad()
+
                 return self._responder(
                     views.pagina_panel(
-                        usuario, mundo.cadena.saldo(dir_u), movs, self._stats()
+                        usuario, saldo_actual, movs, self._stats(),
+                        anuncios=anuncios,
+                        datos_grafica=datos_grafica,
+                        actividad=actividad
                     )
                 )
 
             if ruta == "/login":
                 if usuario:
                     return self._redirigir("/")
-                return self._responder(views.pagina_login(consulta.get("error")))
+                return self._responder(views.pagina_login(consulta.get("error"),
+                                                         ok=consulta.get("ok")))
 
             if ruta == "/registro":
                 if usuario:
@@ -160,7 +265,7 @@ def crear_handler(mundo: Mundo):
                 return self._responder(views.pagina_registro(consulta.get("error")))
 
             if ruta == "/salir":
-                token = self._cookie("youro_token")
+                token = self._cookie("yuro_token")
                 if token:
                     mundo.salir(token)
                 return self._redirigir("/login", limpiar_cookie=True)
@@ -215,14 +320,52 @@ def crear_handler(mundo: Mundo):
             if ruta == "/admin":
                 if not usuario or not mundo.es_admin(usuario["nombre"]):
                     return self._responder(views.pagina_no_encontrado(usuario, self._stats()), 404)
-                impuesto = mundo.impuesto_actual()
-                usuarios = mundo.todos_los_usuarios()
                 stats = self._stats()
-                gobierno_saldo = mundo.cadena.saldo(config.DIRECCION_GOBIERNO)
+                gobierno = mundo.estadisticas_gobierno()
+                usuarios = mundo.todos_los_usuarios()
+                anuncios = mundo.anuncios_activos()
+                log = mundo.log_gobierno()
                 return self._responder(
-                    views.pagina_admin(usuario, impuesto, usuarios, stats, gobierno_saldo,
+                    views.pagina_admin(usuario, gobierno, usuarios, anuncios, log, stats,
                                        consulta.get("ok"), consulta.get("error"))
                 )
+
+            if ruta == "/cuenta":
+                if not usuario:
+                    return self._redirigir("/login")
+                return self._responder(
+                    views.pagina_cuenta(usuario, self._stats(),
+                                        consulta.get("ok"), consulta.get("error"))
+                )
+
+            if ruta == "/tablon":
+                publicaciones = mundo.publicaciones_tablon()
+                return self._responder(
+                    views.pagina_tablon(usuario, publicaciones, self._stats(),
+                                        consulta.get("ok"), consulta.get("error"))
+                )
+
+            if ruta.startswith("/archivos/"):
+                # Servir archivos del tablón
+                nombre_archivo = ruta[10:]  # quitar /archivos/
+                # Validar nombre (evitar path traversal)
+                if "/" in nombre_archivo or "\\" in nombre_archivo or ".." in nombre_archivo:
+                    return self._responder("No encontrado", 404)
+                ruta_archivo = os.path.join(config.CARPETA_ARCHIVOS, nombre_archivo)
+                if not os.path.exists(ruta_archivo):
+                    return self._responder("No encontrado", 404)
+                # Determinar Content-Type
+                ext = nombre_archivo.rsplit(".", 1)[-1].lower() if "." in nombre_archivo else ""
+                tipos = {
+                    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                    "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+                    "pdf": "application/pdf", "txt": "text/plain",
+                    "csv": "text/csv", "zip": "application/zip",
+                }
+                content_type = tipos.get(ext, "application/octet-stream")
+                with open(ruta_archivo, "rb") as f:
+                    datos = f.read()
+                return self._responder_bytes(datos, content_type)
 
             if ruta.startswith("/u/"):
                 nombre = ruta[3:].strip()
@@ -269,6 +412,24 @@ def crear_handler(mundo: Mundo):
                 )
             if ruta == "/icono.png":
                 return self._responder_bytes(pwa.icono_png(), "image/png")
+
+            if ruta == "/api/notificaciones":
+                # SSE: stream de notificaciones en tiempo real
+                if not usuario:
+                    return self._responder("No autorizado", 401)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                try:
+                    for evento in notify.stream_sse(usuario["nombre"]):
+                        self.wfile.write(evento.encode("utf-8"))
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
 
             self._responder(views.pagina_no_encontrado(usuario, self._stats()), 404)
 
@@ -356,10 +517,10 @@ def crear_handler(mundo: Mundo):
                         400,
                     )
                 if impuesto > 0:
-                    ok = (f"¡Enviado ¥ {views.formatear(cantidad_neta)} a {receptor}! "
-                          f"(impuesto ¥{impuesto:.2f} al gobierno)")
+                    ok = (f"¡Enviado Y {views.formatear(cantidad_neta)} a {receptor}! "
+                          f"(impuesto Y{impuesto:.2f} al gobierno)")
                 else:
-                    ok = (f"¡Enviado ¥ {views.formatear(cantidad_neta)} a {receptor}! "
+                    ok = (f"¡Enviado Y {views.formatear(cantidad_neta)} a {receptor}! "
                           f"Se confirma cuando alguien mine el siguiente bloque.")
                 return self._redirigir("/enviar?ok=" + quote(ok))
 
@@ -391,7 +552,7 @@ def crear_handler(mundo: Mundo):
                         datos.get("concepto", "Ajuste del gobierno"),
                     )
                     return self._redirigir(
-                        f"/admin?ok=Saldo%20ajustado%20en%20¥{cantidad:.2f}"
+                        f"/admin?ok=Saldo%20ajustado%20en%20Y{cantidad:.2f}"
                     )
                 except ValueError as e:
                     return self._redirigir(f"/admin?error={quote(str(e))}")
@@ -407,6 +568,111 @@ def crear_handler(mundo: Mundo):
                     )
                 except ValueError as e:
                     return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/congelar":
+                try:
+                    nombre = datos.get("usuario", "")
+                    motivo = datos.get("motivo", "")
+                    mundo.congelar_usuario(usuario["nombre"], nombre, motivo)
+                    return self._redirigir(f"/admin?ok={nombre}%20congelado")
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/descongelar":
+                try:
+                    nombre = datos.get("usuario", "")
+                    mundo.descongelar_usuario(usuario["nombre"], nombre)
+                    return self._redirigir(f"/admin?ok={nombre}%20descongelado")
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/multa":
+                try:
+                    cantidad = mundo.multar_usuario(
+                        usuario["nombre"],
+                        datos.get("usuario", ""),
+                        datos.get("cantidad", "0"),
+                        datos.get("motivo", ""),
+                    )
+                    return self._redirigir(
+                        f"/admin?ok=Multa%20de%20Y{cantidad:.2f}%20aplicada"
+                    )
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/anuncio":
+                try:
+                    mundo.publicar_anuncio(usuario["nombre"], datos.get("mensaje", ""))
+                    return self._redirigir("/admin?ok=Anuncio%20publicado")
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/anuncio/quitar":
+                try:
+                    mundo.quitar_anuncio(usuario["nombre"], datos.get("id", "0"))
+                    return self._redirigir("/admin?ok=Anuncio%20quitado")
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/emergencia":
+                try:
+                    activar = datos.get("accion", "") == "activar"
+                    mundo.activar_emergencia(usuario["nombre"], activar)
+                    estado = "activado" if activar else "desactivado"
+                    return self._redirigir(f"/admin?ok=Emergencia%20{estado}")
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/admin/recompensa":
+                try:
+                    nueva = mundo.ajustar_recompensa(
+                        usuario["nombre"], datos.get("cantidad", "0")
+                    )
+                    return self._redirigir(
+                        f"/admin?ok=Recompensa%20ajustada%20a%20Y{nueva:.2f}"
+                    )
+                except ValueError as e:
+                    return self._redirigir(f"/admin?error={quote(str(e))}")
+
+            if ruta == "/cuenta/password":
+                try:
+                    mundo.identidad.cambiar_password(
+                        usuario["nombre"],
+                        datos.get("actual", ""),
+                        datos.get("nueva", ""),
+                    )
+                    return self._redirigir(
+                        "/login?ok=Contraseña%20cambiada.%20Vuelve%20a%20entrar."
+                    )
+                except ValueError as e:
+                    return self._redirigir(f"/cuenta?error={quote(str(e))}")
+
+            if ruta == "/tablon/publicar":
+                if not usuario:
+                    return self._redirigir("/login")
+                try:
+                    archivo = datos.get("archivo", "")
+                    tipo_archivo = datos.get("archivo_tipo", "")
+                    mundo.publicar_tablon(
+                        usuario["nombre"],
+                        datos.get("titulo", ""),
+                        datos.get("contenido", ""),
+                        archivo or None,
+                        tipo_archivo or None,
+                    )
+                    return self._redirigir("/tablon?ok=Publicación%20compartida")
+                except ValueError as e:
+                    return self._redirigir(f"/tablon?error={quote(str(e))}")
+
+            if ruta == "/tablon/eliminar":
+                if not usuario:
+                    return self._redirigir("/login")
+                try:
+                    pid = datos.get("id", "0")
+                    mundo.quitar_publicacion_tablon(usuario["nombre"], int(pid))
+                    return self._redirigir("/tablon?ok=Publicación%20eliminada")
+                except (ValueError, TypeError) as e:
+                    return self._redirigir(f"/tablon?error={quote(str(e))}")
 
             self._responder(views.pagina_no_encontrado(usuario, self._stats()), 404)
 
@@ -440,6 +706,49 @@ def crear_handler(mundo: Mundo):
 
         def _resolver_nombres_ranking(self, filas):
             mapa = self._nombres_por_direccion({f["direccion"] for f in filas})
+            for f in filas:
+                f["nombre"] = mapa.get(f["direccion"])
+
+        def _datos_grafica_saldo(self, dir_u, movs, saldo_actual):
+            """Genera datos para gráfica de historial de saldo."""
+            if not movs:
+                return None
+            # Calcular saldo histórico (del más reciente al más antiguo)
+            historial = []
+            saldo = saldo_actual
+            for m in movs:
+                if m["para"] == dir_u:
+                    etiqueta = fecha_corta(m["timestamp"])
+                    historial.append((etiqueta, round(saldo, 2)))
+                    saldo -= m["cantidad"]
+                elif m["de"] == dir_u:
+                    etiqueta = fecha_corta(m["timestamp"])
+                    historial.append((etiqueta, round(saldo, 2)))
+                    saldo += m["cantidad"]
+            # Invertir para que sea del más antiguo al más reciente
+            historial.reverse()
+            return historial if len(historial) > 1 else None
+
+        def _datos_actividad(self):
+            """Genera datos de actividad por hora y día."""
+            filas = mundo.db.consultar(
+                "SELECT timestamp FROM transacciones ORDER BY timestamp DESC LIMIT 500"
+            )
+            if not filas:
+                return None
+            # Contar por día (0=lunes) y hora
+            actividad = {}
+            for f in filas:
+                t = time.localtime(f["timestamp"])
+                dia = (t.tm_wday)  # 0=lunes
+                hora = t.tm_hour
+                clave = (dia, hora)
+                actividad[clave] = actividad.get(clave, 0) + 1
+            # Convertir a lista
+            resultado = []
+            for (dia, hora), count in actividad.items():
+                resultado.append((hora, dia, count))
+            return resultado if resultado else None
             for f in filas:
                 f["nombre"] = mapa.get(f["direccion"])
 

@@ -3,10 +3,5 @@ services:
     name: yuro
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python youro.py --servidor"
-    envVars:
-      - key: YURO_PUERTO
-        value: "8080"
-      - key: YURO_DB
-        value: "youro.db"
+    startCommand: "python youro.py"
     autoDeploy: true

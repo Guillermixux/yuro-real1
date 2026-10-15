@@ -1,1 +1,1 @@
-# Yuro - sin dependencias externas (solo stdlib)
+# Yuro - solo stdlib

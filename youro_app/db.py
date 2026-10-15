@@ -1,4 +1,4 @@
-"""Capa de base de datos SQLite de YOURO (WAL, transaccional, a prueba de cortes)."""
+"""Capa de base de datos SQLite de Yuro (WAL, transaccional, a prueba de cortes)."""
 import os
 import shutil
 import sqlite3
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     csrf         TEXT NOT NULL,
     ip           TEXT,
     es_admin     INTEGER NOT NULL DEFAULT 0,
+    congelado    INTEGER NOT NULL DEFAULT 0,
     creado       REAL NOT NULL
 );
 
@@ -56,6 +57,33 @@ CREATE TABLE IF NOT EXISTS config (
     clave TEXT PRIMARY KEY,
     valor TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS anuncios (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    autor     TEXT NOT NULL,
+    mensaje   TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    activo    INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS tablon (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    autor     TEXT NOT NULL,
+    titulo    TEXT NOT NULL,
+    contenido TEXT,
+    archivo   TEXT,
+    tipo_archivo TEXT,
+    timestamp REAL NOT NULL,
+    activo    INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS log_gobierno (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin     TEXT NOT NULL,
+    accion    TEXT NOT NULL,
+    detalle   TEXT,
+    timestamp REAL NOT NULL
+);
 """
 
 
@@ -94,11 +122,16 @@ class BaseDatos:
         self.respaldar_si_existe()
         conn = self._conexion()
         conn.executescript(ESQUEMA)
-        # Migración: añadir columna es_admin si no existe (bases de datos antiguas)
-        try:
-            conn.execute("ALTER TABLE usuarios ADD COLUMN es_admin INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # ya existe
+        # Migraciones para bases de datos antiguas
+        migraciones = [
+            "ALTER TABLE usuarios ADD COLUMN es_admin INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE usuarios ADD COLUMN congelado INTEGER NOT NULL DEFAULT 0",
+        ]
+        for sql in migraciones:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # ya existe
         conn.commit()
 
     def respaldar_si_existe(self):
@@ -107,7 +140,7 @@ class BaseDatos:
             return
         try:
             os.makedirs(config.CARPETA_BACKUPS, exist_ok=True)
-            nombre = f"youro_{time.strftime('%Y%m%d_%H%M%S')}.db"
+            nombre = f"yuro_{time.strftime('%Y%m%d_%H%M%S')}.db"
             destino = os.path.join(config.CARPETA_BACKUPS, nombre)
             shutil.copy2(self.ruta, destino)
             copias = sorted(os.listdir(config.CARPETA_BACKUPS))
