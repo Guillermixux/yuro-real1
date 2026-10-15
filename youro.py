@@ -27,6 +27,7 @@ Modos:
 
 Solo usa la biblioteca estándar de Python (sin pip install).
 """
+import os
 import sys
 import threading
 import time
@@ -43,6 +44,14 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
+    # Reset de base de datos si YURO_RESET=1
+    if os.environ.get("YURO_RESET") == "1":
+        for suf in ("", "-shm", "-wal"):
+            ruta = config.ARCHIVO_DB + suf
+            if os.path.exists(ruta):
+                os.remove(ruta)
+                print(f"  [RESET] Borrado: {ruta}")
 
     online = "--online" in sys.argv
     red = "--red" in sys.argv
