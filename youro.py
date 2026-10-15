@@ -45,13 +45,14 @@ def main():
     except Exception:
         pass
 
-    # Reset de base de datos si YURO_RESET=1
-    if os.environ.get("YURO_RESET") == "1":
+    # En Render: borrar base de datos al arrancar (empieza limpia)
+    if os.environ.get("PORT"):
         for suf in ("", "-shm", "-wal"):
             ruta = config.ARCHIVO_DB + suf
             if os.path.exists(ruta):
                 os.remove(ruta)
                 print(f"  [RESET] Borrado: {ruta}")
+        print("  [RESET] Base de datos limpia en Render")
 
     online = "--online" in sys.argv
     red = "--red" in sys.argv
