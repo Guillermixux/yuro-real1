@@ -5,3 +5,6 @@
 *.db-wal
 backups/
 archivos/
+
+server_*.txt
+bot_log.txt
