@@ -284,39 +284,6 @@ def crear_handler(mundo: Mundo):
                     mundo.salir(token)
                 return self._redirigir("/login", limpiar_cookie=True)
 
-            # ==================== ECONOMÍA: VISTAS GET ====================
-            if ruta == "/bancos":
-                if not usuario:
-                    return self._redirigir("/login")
-                bancos = mundo.listar_bancos()
-                depositos = mundo.mis_depositos(usuario["nombre"])
-                prestamos = mundo.mis_prestamos(usuario["nombre"])
-                return self._responder(
-                    views.pagina_bancos(usuario, self._stats(), bancos, depositos, prestamos,
-                                        ok=consulta.get("ok"), error=consulta.get("error"))
-                )
-
-            if ruta == "/bolsa":
-                if not usuario:
-                    return self._redirigir("/login")
-                mercado = mundo.mercado_bolsa()
-                cartera = mundo.mi_cartera(usuario["nombre"])
-                historial = mundo.historial_bolsa(usuario["nombre"])
-                return self._responder(
-                    views.pagina_bolsa(usuario, self._stats(), mercado, cartera, historial,
-                                       ok=consulta.get("ok"), error=consulta.get("error"))
-                )
-
-            if ruta == "/gobierno/economia":
-                if not usuario or not usuario["es_admin"]:
-                    return self._redirigir("/")
-                bc = mundo.banco_central()
-                stats_eco = mundo.estadisticas_economia()
-                return self._responder(
-                    views.pagina_gobierno_economia(usuario, self._stats(), bc, stats_eco,
-                                                  ok=consulta.get("ok"), error=consulta.get("error"))
-                )
-
             if ruta == "/enviar":
                 if not usuario:
                     return self._redirigir("/login")
@@ -447,46 +414,6 @@ def crear_handler(mundo: Mundo):
                 }
                 datos = json.dumps(cuerpo).encode("utf-8")
                 return self._responder_bytes(datos, "application/json; charset=utf-8")
-
-            # ==================== ECONOMÍA: GET ====================
-            if ruta == "/api/bancos":
-                bancos = mundo.listar_bancos()
-                return self._json(bancos)
-
-            if ruta == "/api/bolsa":
-                mercado = mundo.mercado_bolsa()
-                return self._json(mercado)
-
-            if ruta == "/api/mi-cartera":
-                if not usuario:
-                    return self._responder("No autorizado", 401)
-                cartera = mundo.mi_cartera(usuario["nombre"])
-                return self._json(cartera)
-
-            if ruta == "/api/mis-depositos":
-                if not usuario:
-                    return self._responder("No autorizado", 401)
-                depositos = mundo.mis_depositos(usuario["nombre"])
-                return self._json(depositos)
-
-            if ruta == "/api/mis-prestamos":
-                if not usuario:
-                    return self._responder("No autorizado", 401)
-                prestamos = mundo.mis_prestamos(usuario["nombre"])
-                return self._json(prestamos)
-
-            if ruta == "/api/banco-central":
-                if not usuario or not usuario["es_admin"]:
-                    return self._responder("No autorizado", 403)
-                bc = mundo.banco_central()
-                stats = mundo.estadisticas_economia()
-                return self._json({"banco_central": bc, "estadisticas": stats})
-
-            if ruta == "/api/historial-bolsa":
-                if not usuario:
-                    return self._responder("No autorizado", 401)
-                historial = mundo.historial_bolsa(usuario["nombre"])
-                return self._json(historial)
 
             if ruta == "/manifest.json":
                 return self._responder_bytes(
@@ -734,67 +661,6 @@ def crear_handler(mundo: Mundo):
                 except ValueError as e:
                     return self._redirigir(f"/cuenta?error={quote(str(e))}")
 
-            # ==================== ECONOMÍA: POST WEB ====================
-            if ruta == "/bancos/crear":
-                try:
-                    mundo.crear_banco(datos.get("nombre", ""), usuario["nombre"])
-                    return self._redirigir("/bancos?ok=Banco%20creado")
-                except ValueError as e:
-                    return self._redirigir(f"/bancos?error={quote(str(e))}")
-
-            if ruta == "/bancos/depositar":
-                try:
-                    mundo.depositar_en_banco(
-                        datos.get("banco", ""), usuario["nombre"], datos.get("cantidad", 0)
-                    )
-                    return self._redirigir("/bancos?ok=Depósito%20realizado")
-                except ValueError as e:
-                    return self._redirigir(f"/bancos?error={quote(str(e))}")
-
-            if ruta == "/bancos/retirar":
-                try:
-                    mundo.retirar_del_banco(
-                        datos.get("banco", ""), usuario["nombre"], datos.get("cantidad", 0)
-                    )
-                    return self._redirigir("/bancos?ok=Retiro%20realizado")
-                except ValueError as e:
-                    return self._redirigir(f"/bancos?error={quote(str(e))}")
-
-            if ruta == "/bolsa/comprar":
-                try:
-                    mundo.comprar_accion(
-                        usuario["nombre"], datos.get("simbolo", ""), datos.get("cantidad", 0)
-                    )
-                    return self._redirigir("/bolsa?ok=Compra%20realizada")
-                except ValueError as e:
-                    return self._redirigir(f"/bolsa?error={quote(str(e))}")
-
-            if ruta == "/bolsa/vender":
-                try:
-                    mundo.vender_accion(
-                        usuario["nombre"], datos.get("simbolo", ""), datos.get("cantidad", 0)
-                    )
-                    return self._redirigir("/bolsa?ok=Venta%20realizada")
-                except ValueError as e:
-                    return self._redirigir(f"/bolsa?error={quote(str(e))}")
-
-            if ruta == "/gobierno/tasa":
-                try:
-                    nueva = mundo.ajustar_tasa_interes(usuario["nombre"], datos.get("tasa", 0))
-                    return self._redirigir(f"/gobierno/economia?ok=Tasa%20ajustada%20a%20{nueva}%")
-                except ValueError as e:
-                    return self._redirigir(f"/gobierno/economia?error={quote(str(e))}")
-
-            if ruta == "/gobierno/imprimir":
-                try:
-                    mundo.imprimir_dinero(
-                        usuario["nombre"], datos.get("cantidad", 0),
-                        datos.get("concepto", "Impresión monetaria")
-                    )
-                    return self._redirigir("/gobierno/economia?ok=Dinero%20impreso")
-                except ValueError as e:
-                    return self._redirigir(f"/gobierno/economia?error={quote(str(e))}")
-
             if ruta == "/tablon/publicar":
                 if not usuario:
                     return self._redirigir("/login")
@@ -821,107 +687,6 @@ def crear_handler(mundo: Mundo):
                     return self._redirigir("/tablon?ok=Publicación%20eliminada")
                 except (ValueError, TypeError) as e:
                     return self._redirigir(f"/tablon?error={quote(str(e))}")
-
-            # ==================== ECONOMÍA: POST ====================
-            if ruta == "/api/bancos/crear":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    banco = mundo.crear_banco(datos.get("nombre", ""), usuario["nombre"])
-                    return self._json({"ok": True, "banco": banco})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bancos/depositar":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.depositar_en_banco(
-                        datos.get("banco", ""), usuario["nombre"], datos.get("cantidad", 0)
-                    )
-                    return self._json({"ok": True, "depositado": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bancos/retirar":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.retirar_del_banco(
-                        datos.get("banco", ""), usuario["nombre"], datos.get("cantidad", 0)
-                    )
-                    return self._json({"ok": True, "retirado": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bancos/prestamo":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.solicitar_prestamo(
-                        datos.get("banco", ""), usuario["nombre"],
-                        datos.get("cantidad", 0), datos.get("garantia", 0)
-                    )
-                    return self._json({"ok": True, "prestamo": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bancos/pagar":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.pagar_prestamo(
-                        datos.get("prestamo_id", 0), usuario["nombre"],
-                        datos.get("cantidad", 0)
-                    )
-                    return self._json({"ok": True, "resultado": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bolsa/comprar":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.comprar_accion(
-                        usuario["nombre"], datos.get("simbolo", ""),
-                        datos.get("cantidad", 0)
-                    )
-                    return self._json({"ok": True, "compra": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/bolsa/vender":
-                if not usuario:
-                    return self._json({"error": "No autorizado"}, 401)
-                try:
-                    resultado = mundo.vender_accion(
-                        usuario["nombre"], datos.get("simbolo", ""),
-                        datos.get("cantidad", 0)
-                    )
-                    return self._json({"ok": True, "venta": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/gobierno/tasa":
-                if not usuario or not usuario["es_admin"]:
-                    return self._json({"error": "No autorizado"}, 403)
-                try:
-                    nueva = mundo.ajustar_tasa_interes(usuario["nombre"], datos.get("tasa", 0))
-                    return self._json({"ok": True, "tasa": nueva})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-
-            if ruta == "/api/gobierno/imprimir":
-                if not usuario or not usuario["es_admin"]:
-                    return self._json({"error": "No autorizado"}, 403)
-                try:
-                    resultado = mundo.imprimir_dinero(
-                        usuario["nombre"], datos.get("cantidad", 0),
-                        datos.get("concepto", "Impresión monetaria")
-                    )
-                    return self._json({"ok": True, "impreso": resultado})
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
 
             self._responder(views.pagina_no_encontrado(usuario, self._stats()), 404)
 
