@@ -1412,6 +1412,13 @@ def pagina_error(usuario=None, stats=None):
 
 
 # ==================== PÁGINAS DE ECONOMÍA ====================
+def _csrf(usuario):
+    """Obtiene el CSRF de un usuario sqlite3.Row o dict."""
+    try:
+        return usuario["csrf"] if usuario else ""
+    except (KeyError, IndexError, TypeError):
+        return ""
+
 def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=None, error=None):
     """Página principal de bancos: lista, crear, depositar, retirar."""
     mensaje = ""
@@ -1420,6 +1427,7 @@ def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=Non
     if error:
         mensaje = f'<div class="alerta mal">{esc(error)}</div>'
 
+    csrf = _csrf(usuario)
     filas_bancos = ""
     for b in bancos:
         propietario = esc(b["dueno"])
@@ -1427,18 +1435,17 @@ def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=Non
         <tr>
           <td><b>{esc(b["nombre"])}</b></td>
           <td><a href="/u/{propietario}">{propietario}</a></td>
-          <td class="oro">Y{formatear(b["depositos_totales"])}</td>
-          <td class="oro">Y{formatear(b["prestamos_totales"])}</td>
-          <td class="sub">{b["usuarios"]} clientes</td>
+          <td class="oro">Y{formatear(b["total_depositos"])}</td>
+          <td class="oro">Y{formatear(b["total_prestamos"])}</td>
           <td>
             <form method="post" action="/bancos/depositar" style="display:inline">
-              <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", "")) if usuario else ""}">
+              <input type="hidden" name="csrf" value="{esc(csrf)}">
               <input type="hidden" name="banco" value="{esc(b["nombre"])}">
               <input type="number" name="cantidad" placeholder="Cantidad" step="0.01" min="0.01" style="width:90px">
               <button class="btn mini" type="submit">Depositar</button>
             </form>
             <form method="post" action="/bancos/retirar" style="display:inline">
-              <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", "")) if usuario else ""}">
+              <input type="hidden" name="csrf" value="{esc(csrf)}">
               <input type="hidden" name="banco" value="{esc(b["nombre"])}">
               <input type="number" name="cantidad" placeholder="Cantidad" step="0.01" min="0.01" style="width:90px">
               <button class="btn sec mini" type="submit">Retirar</button>
@@ -1451,7 +1458,7 @@ def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=Non
         for d in depositos:
             depositos_html += f"""
             <tr>
-              <td>{esc(d["banco"])}</td>
+              <td>{esc(d["banco_nombre"])}</td>
               <td class="oro">Y{formatear(d["cantidad"])}</td>
               <td class="sub">{formatear(d["interes_acumulado"])}%</td>
               <td>{time.strftime("%d/%m/%Y", time.localtime(d["fecha"]))}</td>
@@ -1464,7 +1471,7 @@ def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=Non
             prestamos_html += f"""
             <tr>
               <td>#{p["id"]}</td>
-              <td>{esc(p["banco"])}</td>
+              <td>{esc(p["banco_nombre"])}</td>
               <td class="oro">Y{formatear(p["cantidad"])}</td>
               <td class="sub">{p["tasa_interes"]}%</td>
               <td>{estado}</td>
@@ -1476,13 +1483,13 @@ def pagina_bancos(usuario, stats, bancos, depositos=None, prestamos=None, ok=Non
       <h2>🏦 Bancos Yuro</h2>
       <p class="sub">Los bancos prestan dinero con intereses. Tú puedes crear uno, depositar o pedir préstamos.</p>
       <form method="post" action="/bancos/crear" style="margin:10px 0">
-        <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", "")) if usuario else ""}">
+        <input type="hidden" name="csrf" value="{esc(csrf)}">
         <input name="nombre" placeholder="Nombre del banco" required style="width:200px">
         <button class="btn" type="submit">Crear banco</button>
       </form>
       <table>
-        <tr><th>Banco</th><th>Dueño</th><th>Depósitos</th><th>Préstamos</th><th>Clientes</th><th>Acciones</th></tr>
-        {filas_bancos or "<tr><td colspan=6 class='sub'>No hay bancos todavía. ¡Crea el primero!</td></tr>"}
+        <tr><th>Banco</th><th>Dueño</th><th>Depósitos</th><th>Préstamos</th><th>Acciones</th></tr>
+        {filas_bancos or "<tr><td colspan=5 class='sub'>No hay bancos todavía. ¡Crea el primero!</td></tr>"}
       </table>
     </div>
 
@@ -1506,26 +1513,30 @@ def pagina_bolsa(usuario, stats, mercado, cartera=None, historial=None, ok=None,
     if error:
         mensaje = f'<div class="alerta mal">{esc(error)}</div>'
 
+    csrf = _csrf(usuario)
+    acciones = mercado.get("acciones", []) if isinstance(mercado, dict) else mercado
     filas_mercado = ""
-    for a in mercado:
-        cambio = a.get("cambio_pct", 0)
+    for a in acciones:
+        precio = a["precio"]
+        precio_ant = a["precio_anterior"] if "precio_anterior" in a.keys() else precio
+        cambio = ((precio - precio_ant) / precio_ant * 100) if precio_ant else 0
         clase_cambio = "ok" if cambio >= 0 else "mal"
         filas_mercado += f"""
         <tr>
           <td><b>{esc(a["simbolo"])}</b></td>
           <td>{esc(a["nombre"])}</td>
-          <td class="oro">Y{formatear(a["precio"])}</td>
+          <td class="oro">Y{formatear(precio)}</td>
           <td class="{clase_cambio}">{cambio:+.2f}%</td>
           <td class="sub">{formatear(a["volumen"])} acciones</td>
           <td>
             <form method="post" action="/bolsa/comprar" style="display:inline">
-              <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", "")) if usuario else ""}">
+              <input type="hidden" name="csrf" value="{esc(csrf)}">
               <input type="hidden" name="simbolo" value="{esc(a["simbolo"])}">
               <input type="number" name="cantidad" placeholder="Cant." min="1" style="width:70px">
               <button class="btn mini" type="submit">Comprar</button>
             </form>
             <form method="post" action="/bolsa/vender" style="display:inline">
-              <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", "")) if usuario else ""}">
+              <input type="hidden" name="csrf" value="{esc(csrf)}">
               <input type="hidden" name="simbolo" value="{esc(a["simbolo"])}">
               <input type="number" name="cantidad" placeholder="Cant." min="1" style="width:70px">
               <button class="btn sec mini" type="submit">Vender</button>
@@ -1536,7 +1547,7 @@ def pagina_bolsa(usuario, stats, mercado, cartera=None, historial=None, ok=None,
     cartera_html = ""
     if cartera:
         for c in cartera:
-            valor_actual = c.get("valor_actual", 0)
+            valor_actual = c["cantidad"] * c["precio"]
             ganancia = valor_actual - c["cantidad"] * c["precio_compra"]
             clase_gan = "ok" if ganancia >= 0 else "mal"
             cartera_html += f"""
@@ -1558,7 +1569,7 @@ def pagina_bolsa(usuario, stats, mercado, cartera=None, historial=None, ok=None,
               <td>{esc(h["simbolo"])}</td>
               <td>{h["cantidad"]}</td>
               <td class="oro">Y{formatear(h["precio"])}</td>
-              <td class="sub">{time.strftime("%d/%m %H:%M", time.localtime(h["fecha"]))}</td>
+              <td class="sub">{time.strftime("%d/%m %H:%M", time.localtime(h["timestamp"]))}</td>
             </tr>"""
 
     contenido = f"""
@@ -1592,6 +1603,7 @@ def pagina_gobierno_economia(usuario, stats, banco_central, estadisticas, ok=Non
     if error:
         mensaje = f'<div class="alerta mal">{esc(error)}</div>'
 
+    csrf = _csrf(usuario)
     contenido = f"""
     {mensaje}
     <div class="panel">
@@ -1599,10 +1611,10 @@ def pagina_gobierno_economia(usuario, stats, banco_central, estadisticas, ok=Non
       <p class="sub">Ajusta tasas de interés e imprime dinero (solo gobierno).</p>
 
       <h3>🏦 Banco Central</h3>
-      <p>Tasa de interés base: <b class="oro">{banco_central["tasa_interes_base"]}%</b></p>
+      <p>Tasa de interés base: <b class="oro">{banco_central["tasa_interes"]}%</b></p>
       <form method="post" action="/gobierno/tasa" style="margin:10px 0">
-        <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", ""))}">
-        <input type="number" name="tasa" step="0.1" min="0" max="20" value="{banco_central["tasa_interes_base"]}" style="width:100px">
+        <input type="hidden" name="csrf" value="{esc(csrf)}">
+        <input type="number" name="tasa" step="0.1" min="0" max="20" value="{banco_central["tasa_interes"]}" style="width:100px">
         <span class="sub">%</span>
         <button class="btn" type="submit">Ajustar tasa</button>
       </form>
@@ -1610,7 +1622,7 @@ def pagina_gobierno_economia(usuario, stats, banco_central, estadisticas, ok=Non
       <h3>💸 Impresión monetaria</h3>
       <p class="sub">Suministro máximo: Y{formatear(stats.get("suministro", 0))} / Y{formatear(config.SUMINISTRO_MAXIMO)}</p>
       <form method="post" action="/gobierno/imprimir" style="margin:10px 0">
-        <input type="hidden" name="csrf" value="{esc(usuario.get("csrf", ""))}">
+        <input type="hidden" name="csrf" value="{esc(csrf)}">
         <input name="concepto" placeholder="Concepto" style="width:200px">
         <input type="number" name="cantidad" step="0.01" min="0.01" placeholder="Cantidad Y" style="width:120px">
         <button class="btn" type="submit">Imprimir</button>

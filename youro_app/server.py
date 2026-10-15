@@ -76,10 +76,15 @@ def crear_handler(mundo: Mundo):
             self.wfile.write(datos)
 
         def _json(self, datos, codigo=200):
-            """Responde con JSON."""
+            """Responde con JSON (convierte sqlite3.Row a dict)."""
+            class Encoder(json.JSONEncoder):
+                def default(self, o):
+                    if hasattr(o, "keys"):
+                        return {k: o[k] for k in o.keys()}
+                    return super().default(o)
             self.send_response(codigo)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            cuerpo = json.dumps(datos, ensure_ascii=False, default=str).encode("utf-8")
+            cuerpo = json.dumps(datos, ensure_ascii=False, cls=Encoder).encode("utf-8")
             self.send_header("Content-Length", str(len(cuerpo)))
             self.end_headers()
             self.wfile.write(cuerpo)
