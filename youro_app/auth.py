@@ -7,6 +7,7 @@ import time
 from . import config
 
 NOMBRE_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
+IBAN_RE = re.compile(r"^YU[0-9A-Z]{38}$")
 
 # Fallos de login por IP (en memoria: se reinicia con el servidor)
 _fallos_login = {}
@@ -34,7 +35,24 @@ def verificar_password(password, almacenado):
 
 
 def direccion_aleatoria():
-    return "yuro" + secrets.token_hex(20)
+    """Genera IBAN YU + 38 caracteres alfanuméricos."""
+    cuerpo = secrets.token_hex(19).upper()  # 38 hex chars
+    return f"YU{cuerpo}"
+
+
+def formatear_iban(direccion):
+    """Formatea IBAN en grupos de 4: YU00 XXXX XXXX ..."""
+    if not direccion or len(direccion) < 4:
+        return direccion
+    grupos = [direccion[i:i+4] for i in range(0, len(direccion), 4)]
+    return " ".join(grupos)
+
+
+def validar_iban(direccion):
+    """Valida formato IBAN YU."""
+    if not direccion:
+        return False
+    return IBAN_RE.match(direccion.upper().replace(" ", "")) is not None
 
 
 class Identidad:

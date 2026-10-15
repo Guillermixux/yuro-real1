@@ -2,14 +2,14 @@
 import re
 import time
 
-from .auth import Identidad
+from .auth import Identidad, IBAN_RE, formatear_iban, validar_iban
 from .chain import Cadena
 from .config import BIENVENIDA, MAX_REGISTROS_POR_IP
 from .db import BaseDatos
 from . import config
 from .notify import notificar_usuario, notificar_todos, nombres_todos
 
-ES_DIRECCION = re.compile(r"^yuro[0-9a-f]{40}$")
+ES_DIRECCION = IBAN_RE
 
 
 class Mundo:
@@ -46,18 +46,15 @@ class Mundo:
 
     # ---------------------- dinero ----------------------
     def resolver_destino(self, destino):
-        """Acepta nombre de usuario o dirección yuro…; devuelve el usuario."""
-        destino = (destino or "").strip()
+        """Acepta solo dirección IBAN YU; devuelve el usuario."""
+        destino = (destino or "").strip().upper().replace(" ", "")
         if not destino:
-            raise ValueError("Indica a quién quieres enviar los yuros.")
-        if ES_DIRECCION.match(destino):
-            usuario = self.identidad.por_direccion(destino)
-            if not usuario:
-                raise ValueError("Esa dirección no pertenece a ninguna cuenta de Yuro.")
-            return usuario
-        usuario = self.identidad.buscar(destino)
+            raise ValueError("Indica el IBAN del destinatario.")
+        if not validar_iban(destino):
+            raise ValueError("IBAN no válido. Debe empezar por YU seguido de números y letras.")
+        usuario = self.identidad.por_direccion(destino)
         if not usuario:
-            raise ValueError("No existe ningún usuario con ese nombre.")
+            raise ValueError("Ese IBAN no pertenece a ninguna cuenta de Yuro.")
         return usuario
 
     def enviar(self, nombre, destino, cantidad, concepto=None):

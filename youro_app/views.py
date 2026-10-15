@@ -4,6 +4,7 @@ import time
 
 from . import config
 from . import charts
+from .auth import formatear_iban
 from .notify import tema_de_usuario
 
 # ======================================================================
@@ -704,12 +705,12 @@ def pagina_panel(usuario, saldo, movimientos, stats, anuncios=None, datos_grafic
         </div>
       </div>
       <div class="panel">
-        <h2>Tu dirección</h2>
+        <h2>Tu IBAN</h2>
         <div class="copiador">
-          <span class="direccion" id="dir-mia">{esc(dir_u)}</span>
+          <span class="direccion" id="dir-mia">{esc(formatear_iban(dir_u))}</span>
           <button class="btn mini" type="button" onclick="copiar('dir-mia', this)">Copiar</button>
         </div>
-        <p class="sub" style="margin-top:10px">Comparte tu nombre o dirección para cobrar.</p>
+        <p class="sub" style="margin-top:10px">Comparte tu IBAN para cobrar.</p>
       </div>
     </div>
 
@@ -730,10 +731,6 @@ def pagina_enviar(usuario, saldo, nombres_amigos, mensaje=None, error=None, dest
     msg = f'<div class="msg ok">{esc(mensaje)}</div>' if mensaje else ""
     if error:
         msg = f'<div class="msg mal">{esc(error)}</div>'
-    opciones = "".join(
-        f'<option value="{esc(n)}">{esc(n)}</option>' for n in nombres_amigos
-        if n != usuario["nombre"]
-    )
     contenido = f"""
     <div class="panel" style="max-width:480px">
       <h2>Enviar yuros</h2>
@@ -742,10 +739,11 @@ def pagina_enviar(usuario, saldo, nombres_amigos, mensaje=None, error=None, dest
       {msg}
       <form method="post" action="/enviar">
         <input type="hidden" name="csrf" value="{esc(csrf)}">
-        <label>Para (nombre de usuario o dirección yuro…)</label>
-        <input type="text" name="destino" list="amigos" value="{esc(destino_previo)}"
-               placeholder="ej: maria o yuro1a3f…" required>
-        <datalist id="amigos">{opciones}</datalist>
+        <label>IBAN del destinatario</label>
+        <input type="text" name="destino" value="{esc(destino_previo)}"
+               placeholder="YU00 XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX"
+               pattern="YU[0-9A-Za-z ]{{10,}}" required>
+        <p class="sub" style="margin:4px 0 12px">Empieza por <b>YU</b> seguido de números y letras.</p>
         <label>Cantidad (Y)</label>
         <input type="number" name="cantidad" min="0.01" step="0.01" max="100000000"
                value="{esc(cantidad_previa)}" required>
@@ -953,11 +951,11 @@ def pagina_perfil(usuario, publico, perfil, movimientos, stats, es_propio=False)
           <div class="saldo" style="font-size:34px">Y {formatear(perfil['saldo'])}</div>
         </div>
         <div>
-          <button class="btn mini" type="button" onclick="copiar('dir-perfil', this)">Copiar dirección</button>
-          {f'<a class="btn sec mini" href="/enviar?para={esc(publico["nombre"])}">Enviar Y</a>' if usuario and not es_propio else ''}
+          <button class="btn mini" type="button" onclick="copiar('dir-perfil', this)">Copiar IBAN</button>
+          {f'<a class="btn sec mini" href="/enviar?destino={esc(dir_p)}">Enviar Y</a>' if usuario and not es_propio else ''}
         </div>
       </div>
-      <span class="direccion" id="dir-perfil">{esc(dir_p)}</span>
+      <span class="direccion" id="dir-perfil">{esc(formatear_iban(dir_p))}</span>
       <div class="grid" style="margin-top:14px">
         <div class="panel" style="margin:0"><div class="sub">Recibido (lifetime)</div>
           <b class="ok" style="font-size:20px">+ Y {formatear(perfil['recibido'])}</b></div>
