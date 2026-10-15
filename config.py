@@ -6,7 +6,7 @@ VERSION = "2.0"
 RUTA_APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARCHIVO_DB = os.path.join(RUTA_APP, "youro.db")
 CARPETA_BACKUPS = os.path.join(RUTA_APP, "backups")
-PUERTO = int(os.environ.get("YOURO_PUERTO", "8080"))
+PUERTO = int(os.environ.get("PORT") or os.environ.get("YOURO_PUERTO") or "8080")
 
 # ---------------- Modelo económico (anti-inflación, tipo Bitcoin) ----------
 DIFICULTAD = 3             # ceros iniciales en el hash
